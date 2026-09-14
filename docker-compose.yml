@@ -1,0 +1,60 @@
+# Quattera CI runners — docker compose
+#
+# One service = one runner = one parallel CI job. Each service needs its own
+# runner token from Settings → CI/CD → New runner (put them in .env next to
+# this file, see .env.example). Add a service block per extra runner.
+#
+# Start:    docker compose up -d
+# Logs:     docker compose logs -f ci-runner-1
+# Update:   docker compose pull && docker compose up -d   (runners never
+#           self-update inside a container; pin a version with QUATTERA_AGENT_TAG)
+# Remove:   docker compose down            (keeps the volumes = runner identity)
+#           docker compose down -v         (also forgets the runner identity)
+#
+# Security defaults (keep them):
+#   - non-root user, all Linux capabilities dropped, read-only root filesystem
+#   - no ports published (a runner has nothing to expose)
+#   - Chrome's own sandbox stays ON: chrome-seccomp.json allows only the
+#     namespace calls that sandbox needs (the standard profile for Chrome in
+#     containers) — do NOT replace it with --no-sandbox
+#   - the runner token lives only in .env / the container environment
+
+x-runner: &runner
+  image: ghcr.io/quattera-ai/agent:${QUATTERA_AGENT_TAG:-latest}
+  restart: unless-stopped
+  read_only: true
+  tmpfs:
+    - /tmp:size=1g,mode=1777,exec
+  security_opt:
+    - no-new-privileges:true
+    - seccomp:./chrome-seccomp.json
+  cap_drop:
+    - ALL
+  mem_limit: 2g
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  ci-runner-1:
+    <<: *runner
+    hostname: ci-runner-1
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN_1:?set AGENT_TOKEN_1 in .env}
+    volumes:
+      - ci-runner-1:/home/quattera
+
+  # Second runner — delete this block if you have one runner.
+  ci-runner-2:
+    <<: *runner
+    hostname: ci-runner-2
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN_2:?set AGENT_TOKEN_2 in .env}
+    volumes:
+      - ci-runner-2:/home/quattera
+
+volumes:
+  ci-runner-1:
+  ci-runner-2:
